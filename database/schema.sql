@@ -7,7 +7,6 @@ CREATE TABLE repositories (
     url TEXT NOT NULL UNIQUE,
     organization TEXT NOT NULL,
     name TEXT NOT NULL,
-    sbt_version TEXT NOT NULL,
     is_plugin_containing_repo BOOLEAN NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'not_ported' CHECK(status IN ('not_ported', 'blocked', 'experimental', 'upstream')),
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -20,7 +19,6 @@ CREATE TABLE artifacts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     organization TEXT NOT NULL,
     name TEXT NOT NULL,
-    version TEXT NOT NULL,
     is_plugin BOOLEAN NOT NULL DEFAULT 0,
     repository_id INTEGER,  -- NULL if artifact is known only from dependencies
     subproject TEXT,  -- Name of subproject that publishes this (if from repository)
@@ -30,7 +28,7 @@ CREATE TABLE artifacts (
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE SET NULL,
-    UNIQUE(organization, name, version)
+    UNIQUE(organization, name)
 );
 
 -- Plugin dependencies: repositories depend on SBT plugins
@@ -64,7 +62,7 @@ CREATE INDEX idx_repositories_url ON repositories(url);
 CREATE INDEX idx_repositories_org_name ON repositories(organization, name);
 CREATE INDEX idx_repositories_status ON repositories(status);
 
-CREATE INDEX idx_artifacts_org_name_version ON artifacts(organization, name, version);
+CREATE INDEX idx_artifacts_org_name ON artifacts(organization, name);
 CREATE INDEX idx_artifacts_repository_id ON artifacts(repository_id);
 CREATE INDEX idx_artifacts_is_plugin ON artifacts(is_plugin);
 CREATE INDEX idx_artifacts_status ON artifacts(status);

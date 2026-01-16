@@ -8,6 +8,7 @@ import requests
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from urllib.parse import urlparse
+import sys
 
 DB_PATH = Path(__file__).parent.parent / "database" / "sbt_ecosystem.db"
 
@@ -17,9 +18,9 @@ MAVEN_CENTRAL_BASE = "https://repo1.maven.org/maven2"
 def maven_path_to_url(organization, name, version, scala_version="2.12", sbt_version="1.0"):
     """Convert Maven coordinates to Maven Central URL path"""
     org_path = organization.replace('.', '/')
-    # SBT plugins have format: name_scalaVersion_sbtVersion
+    # SBT plugins have format: name_scalaVersion_sbtVersion for directory, but POM is name-version.pom
     artifact_name = f"{name}_{scala_version}_{sbt_version}"
-    return f"{MAVEN_CENTRAL_BASE}/{org_path}/{artifact_name}/{version}/{artifact_name}-{version}.pom"
+    return f"{MAVEN_CENTRAL_BASE}/{org_path}/{artifact_name}/{version}/{name}-{version}.pom"
 
 def fetch_pom(organization, name, version, scala_version="2.12", sbt_version="1.0"):
     """Fetch POM file from Maven Central"""
@@ -97,19 +98,29 @@ def extract_scm_url(pom_xml):
 
     return None
 
-def update_plugin_repositories():
+def update_plugin_repositories(organization=None, name=None, version=None):
     """Fetch repository URLs for plugins and update database"""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
-    # Get all plugins without repository_id
-    cursor.execute("""
-        SELECT id, organization, name, version
-        FROM artifacts
-        WHERE is_plugin = 1 AND repository_id IS NULL
-        ORDER BY organization, name
-    """)
+    # Get plugins - either specific one or all without repository_id
+    if organization and name and version:
+        cursor.execute("""
+            SELECT id, organization, name, version
+            FROM artifacts
+            WHERE is_plugin = 1
+              AND organization = ?
+              AND name = ?
+              AND version = ?
+        """, (organization, name, version))
+    else:
+        cursor.execute("""
+            SELECT id, organization, name, version
+            FROM artifacts
+            WHERE is_plugin = 1 AND repository_id IS NULL
+            ORDER BY organization, name
+        """)
 
     plugins = cursor.fetchall()
 
@@ -152,9 +163,9 @@ def update_plugin_repositories():
                             org = org_name if org_name else 'unknown'
 
                             cursor.execute("""
-                                INSERT INTO repositories (url, organization, name, sbt_version, is_plugin_containing_repo, status)
-                                VALUES (?, ?, ?, ?, ?, ?)
-                            """, (repo_url, org, repo_name, 'unknown', 1, 'not_ported'))
+                                INSERT INTO repositories (url, organization, name, is_plugin_containing_repo, status)
+                                VALUES (?, ?, ?, ?, ?)
+                            """, (repo_url, org, repo_name, 1, 'not_ported'))
                             repo_id = cursor.lastrowid
                             print(f"  Created new repository entry (ID: {repo_id})")
                         else:
@@ -183,4 +194,15 @@ def update_plugin_repositories():
     print("Done!")
 
 if __name__ == "__main__":
-    update_plugin_repositories()
+    if len(sys.argv) > 1:
+        # Parse plugin coordinate: organization:name:version
+        coord = sys.argv[1]
+        parts = coord.split(':')
+        if len(parts) == 3:
+            org, name, version = parts
+            update_plugin_repositories(organization=org, name=name, version=version)
+        else:
+            print(f"Error: Invalid plugin coordinate format. Expected 'organization:name:version', got '{coord}'")
+            sys.exit(1)
+    else:
+        update_plugin_repositories()

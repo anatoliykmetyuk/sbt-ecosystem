@@ -42,7 +42,6 @@ def get_plugin_dependencies(cursor, repository_id):
             a.id,
             a.organization,
             a.name,
-            a.version,
             a.repository_id,
             a.status,
             rpd.version as dep_version
@@ -70,9 +69,11 @@ def format_repo_name(org, name):
     return f"{org}/{name}"
 
 
-def format_artifact_name(org, name, version):
-    """Format artifact name"""
-    return f"{org}:{name}:{version}"
+def format_artifact_name(org, name, version=None):
+    """Format artifact name with optional version"""
+    if version:
+        return f"{org}:{name}:{version}"
+    return f"{org}:{name}"
 
 
 def print_dependency_tree(cursor, repository_id, org, name, status, visited_repos, visited_artifacts, indent=""):
@@ -92,36 +93,32 @@ def print_dependency_tree(cursor, repository_id, org, name, status, visited_repo
         return
 
     # Process each plugin dependency
-    for i, (plugin_id, plugin_org, plugin_name, plugin_version, plugin_repo_id, plugin_status, dep_version) in enumerate(plugin_deps):
+    for i, (plugin_id, plugin_org, plugin_name, plugin_repo_id, plugin_status, dep_version) in enumerate(plugin_deps):
         is_last = (i == len(plugin_deps) - 1)
         tree_char = "└─" if is_last else "├─"
         child_indent = indent + tree_char + " "
         next_indent = indent + ("   " if is_last else "│  ")
 
-        # Check if we've already visited this artifact to avoid infinite loops
-        artifact_key = (plugin_org, plugin_name, plugin_version)
-        if artifact_key in visited_artifacts:
-            # Show as already visited - use artifact status if available
-            status_letter = get_status_letter(plugin_status)
-            artifact_name = format_artifact_name(plugin_org, plugin_name, plugin_version)
-            print(f"{child_indent}{status_letter} {artifact_name} (already visited)")
-            continue
+        artifact_key = (plugin_org, plugin_name)
 
-        visited_artifacts.add(artifact_key)
-
-        # Try to find repository for this plugin
+        # Try to find repository for this plugin FIRST
         repo_info = get_repository_for_plugin(cursor, plugin_id)
 
         if repo_info:
-            # Plugin comes from a repository
+            # Plugin comes from a repository - always show as repository
             plugin_repo_id, plugin_repo_org, plugin_repo_name, plugin_repo_status = repo_info
 
             if plugin_repo_id in visited_repos:
                 # Already visited this repository
                 status_letter = get_status_letter(plugin_repo_status)
                 repo_name = format_repo_name(plugin_repo_org, plugin_repo_name)
-                print(f"{child_indent}{status_letter} {repo_name} (already visited)")
-            elif plugin_status == "upstream" or plugin_repo_status == "upstream":
+                print(f"{child_indent}{status_letter} {repo_name}")
+                continue
+
+            # Mark artifact as visited to avoid processing it again elsewhere
+            visited_artifacts.add(artifact_key)
+
+            if plugin_status == "upstream" or plugin_repo_status == "upstream":
                 # Plugin is ported - don't recurse deeper, just show it
                 status_letter = get_status_letter(plugin_repo_status or plugin_status)
                 repo_name = format_repo_name(plugin_repo_org, plugin_repo_name)
@@ -139,10 +136,20 @@ def print_dependency_tree(cursor, repository_id, org, name, status, visited_repo
                     next_indent
                 )
         else:
+            # Plugin doesn't have a known repository - show as artifact
+            if artifact_key in visited_artifacts:
+                # Show as already visited - use artifact status if available
+                status_letter = get_status_letter(plugin_status)
+                artifact_name = format_artifact_name(plugin_org, plugin_name, dep_version)
+                print(f"{child_indent}{status_letter} {artifact_name}")
+                continue
+
+            visited_artifacts.add(artifact_key)
+
             # Plugin doesn't have a known repository - use artifact status if available
             # If artifact status is "upstream", we still show it but don't recurse (no repo to recurse into anyway)
             status_letter = get_status_letter(plugin_status)
-            artifact_name = format_artifact_name(plugin_org, plugin_name, plugin_version)
+            artifact_name = format_artifact_name(plugin_org, plugin_name, dep_version)
             print(f"{child_indent}{status_letter} {artifact_name}")
 
 

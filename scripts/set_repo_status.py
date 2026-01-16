@@ -76,19 +76,19 @@ def set_artifact_status(artifact_identifier, status):
     """Set the status of an artifact"""
     validate_status(status)
 
-    # Parse artifact identifier (organization:name:version)
+    # Parse artifact identifier (organization:name)
     if ":" not in artifact_identifier:
-        print(f"Error: Artifact identifier must be in format 'organization:name:version'")
+        print(f"Error: Artifact identifier must be in format 'organization:name'")
         print(f"Got: {artifact_identifier}")
         sys.exit(1)
 
     parts = artifact_identifier.split(":")
-    if len(parts) != 3:
-        print(f"Error: Artifact identifier must be in format 'organization:name:version'")
+    if len(parts) != 2:
+        print(f"Error: Artifact identifier must be in format 'organization:name'")
         print(f"Got: {artifact_identifier}")
         sys.exit(1)
 
-    org, name, version = parts
+    org, name = parts
 
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
@@ -96,18 +96,18 @@ def set_artifact_status(artifact_identifier, status):
     try:
         # Find the artifact
         cursor.execute("""
-            SELECT id, organization, name, version, status, repository_id
+            SELECT id, organization, name, status, repository_id
             FROM artifacts
-            WHERE organization = ? AND name = ? AND version = ?
-        """, (org, name, version))
+            WHERE organization = ? AND name = ?
+        """, (org, name))
 
         result = cursor.fetchone()
 
         if not result:
-            print(f"Error: Artifact '{org}:{name}:{version}' not found in database")
+            print(f"Error: Artifact '{org}:{name}' not found in database")
             sys.exit(1)
 
-        artifact_id, artifact_org, artifact_name, artifact_version, old_status, repo_id = result
+        artifact_id, artifact_org, artifact_name, old_status, repo_id = result
 
         # Update status
         cursor.execute("""
@@ -118,7 +118,7 @@ def set_artifact_status(artifact_identifier, status):
 
         conn.commit()
 
-        print(f"✓ Updated artifact: {artifact_org}:{artifact_name}:{artifact_version}")
+        print(f"✓ Updated artifact: {artifact_org}:{artifact_name}")
         if old_status:
             print(f"  Status changed: {old_status} → {status}")
         else:
@@ -139,12 +139,12 @@ def set_artifact_status(artifact_identifier, status):
 
 def set_status(identifier, status):
     """Set status for either a repository or artifact based on identifier format"""
-    # Determine if it's a repository (contains /) or artifact (contains : and has 3 parts)
-    # Check for artifact format first (more specific: org:name:version)
+    # Determine if it's a repository (contains /) or artifact (contains : and has 2 parts)
+    # Check for artifact format first (more specific: org:name)
     if ":" in identifier:
         parts = identifier.split(":")
-        if len(parts) == 3:
-            # Artifact identifier: organization:name:version
+        if len(parts) == 2:
+            # Artifact identifier: organization:name
             set_artifact_status(identifier, status)
             return
 
@@ -157,7 +157,7 @@ def set_status(identifier, status):
     # Neither format matched
     print(f"Error: Identifier must be either:")
     print(f"  - Repository format: 'organization/name'")
-    print(f"  - Artifact format: 'organization:name:version'")
+    print(f"  - Artifact format: 'organization:name'")
     print(f"Got: {identifier}")
     sys.exit(1)
 
@@ -169,8 +169,8 @@ def main():
         print("Identifier formats:")
         print("  - Repository: organization/name")
         print("    Example: com.augustnagro/magnum")
-        print("  - Artifact: organization:name:version")
-        print("    Example: org.scalameta:sbt-scalafmt:2.5.6")
+        print("  - Artifact: organization:name")
+        print("    Example: org.scalameta:sbt-scalafmt")
         print()
         print(f"Valid statuses: {', '.join(VALID_STATUSES)}")
         sys.exit(1)

@@ -32,12 +32,12 @@ def initialize_database(conn):
     else:
         print("✓ Database already initialized")
 
-def get_or_create_artifact(cursor, org, name, version, is_plugin, repository_id=None, subproject=None, is_published=True, scala_version=None, status=None):
+def get_or_create_artifact(cursor, org, name, is_plugin, repository_id=None, subproject=None, is_published=True, scala_version=None, status=None):
     """Get existing artifact ID or create new artifact. Only fills in NULL values for existing artifacts."""
     cursor.execute("""
         SELECT id, repository_id, subproject, is_published, scala_version, status FROM artifacts
-        WHERE organization = ? AND name = ? AND version = ?
-    """, (org, name, version))
+        WHERE organization = ? AND name = ?
+    """, (org, name))
     result = cursor.fetchone()
 
     if result:
@@ -94,9 +94,9 @@ def get_or_create_artifact(cursor, org, name, version, is_plugin, repository_id=
                 status = repo_status_result[0]
 
         cursor.execute("""
-            INSERT INTO artifacts (organization, name, version, is_plugin, repository_id, subproject, is_published, scala_version, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (org, name, version, is_plugin, repository_id, subproject, is_published, scala_version, status))
+            INSERT INTO artifacts (organization, name, is_plugin, repository_id, subproject, is_published, scala_version, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (org, name, is_plugin, repository_id, subproject, is_published, scala_version, status))
         return cursor.lastrowid
 
 def insert_analysis(json_path):
@@ -115,16 +115,17 @@ def insert_analysis(json_path):
         # 1. Insert or update repository (only fill NULL values)
         repo = data['repository']
         cursor.execute("""
-            SELECT id, organization, name, sbt_version, is_plugin_containing_repo, status
+            SELECT id, organization, name, is_plugin_containing_repo, status
             FROM repositories WHERE url = ?
         """, (repo['url'],))
         result = cursor.fetchone()
 
         if result:
             repo_id = result[0]
-            existing_org, existing_name, existing_sbt_version, existing_is_plugin, existing_status = result[1:]
+            existing_org, existing_name, existing_is_plugin, existing_status = result[1:]
 
-            # Only update NULL fields, don't overwrite existing data
+            # Update fields: analysis is authoritative for status and is_plugin_containing_repo
+            # Only update organization/name if NULL (these shouldn't change)
             updates = []
             params = []
 
@@ -136,17 +137,12 @@ def insert_analysis(json_path):
                 updates.append("name = ?")
                 params.append(repo['name'])
 
-            if existing_sbt_version is None:
-                updates.append("sbt_version = ?")
-                params.append(data['sbtVersion'])
+            # Always update these fields from analysis (analysis is authoritative)
+            updates.append("is_plugin_containing_repo = ?")
+            params.append(data['isPluginContainingRepo'])
 
-            if existing_is_plugin is None:
-                updates.append("is_plugin_containing_repo = ?")
-                params.append(data['isPluginContainingRepo'])
-
-            if existing_status is None:
-                updates.append("status = ?")
-                params.append(data['status'])
+            updates.append("status = ?")
+            params.append(data['status'])
 
             if updates:
                 params.append(repo_id)
@@ -157,9 +153,9 @@ def insert_analysis(json_path):
                 """, params)
         else:
             cursor.execute("""
-                INSERT INTO repositories (url, organization, name, sbt_version, is_plugin_containing_repo, status)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (repo['url'], repo['organization'], repo['name'], data['sbtVersion'],
+                INSERT INTO repositories (url, organization, name, is_plugin_containing_repo, status)
+                VALUES (?, ?, ?, ?, ?)
+            """, (repo['url'], repo['organization'], repo['name'],
                   data['isPluginContainingRepo'], data['status']))
             repo_id = cursor.lastrowid
 
@@ -194,7 +190,6 @@ def insert_analysis(json_path):
                 cursor,
                 artifact['organization'],
                 artifact['name'],
-                artifact['version'],
                 is_plugin=artifact['isPlugin'],
                 repository_id=repo_id,
                 subproject=artifact.get('subproject'),
@@ -210,7 +205,6 @@ def insert_analysis(json_path):
                     cursor,
                     lib_dep['organization'],
                     lib_dep['name'],
-                    lib_dep['version'],
                     is_plugin=False,
                     repository_id=None,
                     is_published=True,
@@ -225,7 +219,7 @@ def insert_analysis(json_path):
 
             deps_count = len(artifact.get('libraryDependencies', []))
             artifact_type = "Plugin" if artifact['isPlugin'] else "Library"
-            print(f"✓ {artifact_type}: {artifact['organization']}:{artifact['name']}:{artifact['version']} ({deps_count} dependencies)")
+            print(f"✓ {artifact_type}: {artifact['organization']}:{artifact['name']} ({deps_count} dependencies)")
 
         conn.commit()
         print(f"\n✓ Successfully inserted analysis data from {json_path}")

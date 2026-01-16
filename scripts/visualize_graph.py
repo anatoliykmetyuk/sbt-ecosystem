@@ -35,7 +35,7 @@ def load_graph_data():
 
     # Load artifacts
     cursor.execute("""
-        SELECT id, organization, name, version, is_plugin, repository_id
+        SELECT id, organization, name, is_plugin, repository_id
         FROM artifacts
     """)
     artifacts = {row['id']: row for row in cursor.fetchall()}
@@ -79,7 +79,7 @@ def build_graph(repositories, artifacts, repo_plugin_edges, artifact_edges):
     artifact_nodes = {}
     for art_id, art in artifacts.items():
         node_id = f"art_{art_id}"
-        label = f"{art['organization']}:{art['name']}:{art['version']}"
+        label = f"{art['organization']}:{art['name']}"
         G.add_node(node_id,
                    type='artifact',
                    label=label,

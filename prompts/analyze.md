@@ -16,6 +16,8 @@ You will be provided with:
 
 1. Ensure the repository is cloned to `repos/` directory. If the repository is providead as a URL, clone it to `repos/` directory. If the repository is provided as an artifact identifyer, fetch the repository name using `scripts/fetch_plugin_repos.py`.
 
+   **IMPORTANT**: After cloning, always stay on the default branch (typically `main`, `master`, or `develop`). **DO NOT check out any tags**, even if the user provided a specific artifact version. We analyze the current upstream/main branch state, not specific tagged releases.
+
 2. **Repository URL**: Extract from:
    - `build.sbt`: Look for `homepage := Some(url(...))` or `scmInfo`
    - If not found, infer from git remote or directory name

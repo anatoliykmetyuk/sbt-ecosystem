@@ -107,16 +107,15 @@ def update_plugin_repositories(organization=None, name=None, version=None):
     # Get plugins - either specific one or all without repository_id
     if organization and name and version:
         cursor.execute("""
-            SELECT id, organization, name, version
+            SELECT id, organization, name
             FROM artifacts
             WHERE is_plugin = 1
               AND organization = ?
               AND name = ?
-              AND version = ?
-        """, (organization, name, version))
+        """, (organization, name))
     else:
         cursor.execute("""
-            SELECT id, organization, name, version
+            SELECT id, organization, name
             FROM artifacts
             WHERE is_plugin = 1 AND repository_id IS NULL
             ORDER BY organization, name
@@ -128,13 +127,13 @@ def update_plugin_repositories(organization=None, name=None, version=None):
     print("=" * 60)
 
     for plugin in plugins:
-        print(f"\nPlugin: {plugin['organization']}:{plugin['name']}:{plugin['version']}")
+        print(f"\nPlugin: {plugin['organization']}:{plugin['name']}")
 
         # Fetch POM - SBT plugins use _scalaVersion_sbtVersion in artifact name
         # Try common combinations: 2.12/1.0, 2.12/1.0, 2.13/1.0
         pom_xml = None
         for scala_ver, sbt_ver in [("2.12", "1.0"), ("2.13", "1.0"), ("2.12", "2.0")]:
-            pom_xml = fetch_pom(plugin['organization'], plugin['name'], plugin['version'], scala_ver, sbt_ver)
+            pom_xml = fetch_pom(plugin['organization'], plugin['name'], version, scala_ver, sbt_ver)
             if pom_xml:
                 break
 

@@ -33,56 +33,29 @@ def initialize_database(conn):
         print("✓ Database already initialized")
 
 def get_or_create_artifact(cursor, org, name, is_plugin, repository_id=None, subproject=None, is_published=True, scala_version=None, status=None):
-    """Get existing artifact ID or create new artifact. Only fills in NULL values for existing artifacts."""
+    """Get existing artifact ID or create new artifact. Always overwrites existing data with new analysis."""
     cursor.execute("""
-        SELECT id, repository_id, subproject, is_published, scala_version, status FROM artifacts
+        SELECT id FROM artifacts
         WHERE organization = ? AND name = ?
     """, (org, name))
     result = cursor.fetchone()
 
     if result:
         artifact_id = result[0]
-        existing_repo_id, existing_subproject, existing_is_published, existing_scala_version, existing_status = result[1:]
 
-        # Only update NULL fields, don't overwrite existing data
-        updates = []
-        params = []
-
-        if repository_id is not None and existing_repo_id is None:
-            updates.append("repository_id = ?")
-            params.append(repository_id)
-            # If we're setting repository_id and status is provided, also update status
-            if status is not None and existing_status is None:
-                updates.append("status = ?")
-                params.append(status)
-
-        if subproject is not None and existing_subproject is None:
-            updates.append("subproject = ?")
-            params.append(subproject)
-
-        if existing_is_published is None:
-            updates.append("is_published = ?")
-            params.append(is_published)
-
-        if scala_version is not None and existing_scala_version is None:
-            updates.append("scala_version = ?")
-            params.append(scala_version)
-
-        # If repository_id exists but status is NULL, try to get status from repository
-        if existing_repo_id is not None and existing_status is None:
-            cursor.execute("SELECT status FROM repositories WHERE id = ?", (existing_repo_id,))
+        # If status is not provided but repository_id is, get status from repository
+        if status is None and repository_id is not None:
+            cursor.execute("SELECT status FROM repositories WHERE id = ?", (repository_id,))
             repo_status_result = cursor.fetchone()
             if repo_status_result:
-                updates.append("status = ?")
-                params.append(repo_status_result[0])
+                status = repo_status_result[0]
 
-        if updates:
-            params.append(artifact_id)
-            cursor.execute(f"""
-                UPDATE artifacts
-                SET {', '.join(updates)}
-                WHERE id = ?
-            """, params)
+        # Always overwrite all fields with new analysis data
+        cursor.execute("""
+            UPDATE artifacts
+            SET is_plugin = ?, repository_id = ?, subproject = ?, is_published = ?, scala_version = ?, status = ?
+            WHERE id = ?
+        """, (is_plugin, repository_id, subproject, is_published, scala_version, status, artifact_id))
 
         return artifact_id
     else:
@@ -112,45 +85,22 @@ def insert_analysis(json_path):
     initialize_database(conn)
 
     try:
-        # 1. Insert or update repository (only fill NULL values)
+        # 1. Insert or update repository (always overwrite with new analysis)
         repo = data['repository']
         cursor.execute("""
-            SELECT id, organization, name, is_plugin_containing_repo, status
-            FROM repositories WHERE url = ?
+            SELECT id FROM repositories WHERE url = ?
         """, (repo['url'],))
         result = cursor.fetchone()
 
         if result:
             repo_id = result[0]
-            existing_org, existing_name, existing_is_plugin, existing_status = result[1:]
 
-            # Update fields: analysis is authoritative for status and is_plugin_containing_repo
-            # Only update organization/name if NULL (these shouldn't change)
-            updates = []
-            params = []
-
-            if existing_org is None:
-                updates.append("organization = ?")
-                params.append(repo['organization'])
-
-            if existing_name is None:
-                updates.append("name = ?")
-                params.append(repo['name'])
-
-            # Always update these fields from analysis (analysis is authoritative)
-            updates.append("is_plugin_containing_repo = ?")
-            params.append(data['isPluginContainingRepo'])
-
-            updates.append("status = ?")
-            params.append(data['status'])
-
-            if updates:
-                params.append(repo_id)
-                cursor.execute(f"""
-                    UPDATE repositories
-                    SET {', '.join(updates)}
-                    WHERE id = ?
-                """, params)
+            # Always overwrite all fields with new analysis data
+            cursor.execute("""
+                UPDATE repositories
+                SET organization = ?, name = ?, is_plugin_containing_repo = ?, status = ?
+                WHERE id = ?
+            """, (repo['organization'], repo['name'], data['isPluginContainingRepo'], data['status'], repo_id))
         else:
             cursor.execute("""
                 INSERT INTO repositories (url, organization, name, is_plugin_containing_repo, status)
@@ -161,13 +111,16 @@ def insert_analysis(json_path):
 
         print(f"✓ Repository: {repo['organization']}/{repo['name']} (ID: {repo_id})")
 
-        # 2. Insert plugin dependencies
+        # 2. Delete existing plugin dependencies and insert new ones (overwrite)
+        cursor.execute("""
+            DELETE FROM repository_plugin_dependencies WHERE repository_id = ?
+        """, (repo_id,))
+
         for plugin_dep in data['pluginDependencies']:
             plugin_art_id = get_or_create_artifact(
                 cursor,
                 plugin_dep['organization'],
                 plugin_dep['name'],
-                plugin_dep['version'],
                 is_plugin=True,
                 repository_id=None,
                 is_published=True,
@@ -175,7 +128,7 @@ def insert_analysis(json_path):
             )
 
             cursor.execute("""
-                INSERT OR IGNORE INTO repository_plugin_dependencies (repository_id, plugin_artifact_id, version)
+                INSERT INTO repository_plugin_dependencies (repository_id, plugin_artifact_id, version)
                 VALUES (?, ?, ?)
             """, (repo_id, plugin_art_id, plugin_dep['version']))
 
@@ -198,6 +151,11 @@ def insert_analysis(json_path):
                 status=repo_status  # Artifact status matches repository status
             )
 
+            # Delete existing library dependencies and insert new ones (overwrite)
+            cursor.execute("""
+                DELETE FROM artifact_dependencies WHERE dependent_artifact_id = ?
+            """, (artifact_id,))
+
             # Insert library dependencies for this artifact
             for lib_dep in artifact.get('libraryDependencies', []):
                 # Get or create dependency artifact
@@ -213,7 +171,7 @@ def insert_analysis(json_path):
 
                 # Insert artifact dependency
                 cursor.execute("""
-                    INSERT OR IGNORE INTO artifact_dependencies (dependent_artifact_id, dependency_artifact_id, version, scope)
+                    INSERT INTO artifact_dependencies (dependent_artifact_id, dependency_artifact_id, version, scope)
                     VALUES (?, ?, ?, ?)
                 """, (artifact_id, dep_art_id, lib_dep['version'], lib_dep['scope']))
 

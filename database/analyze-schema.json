@@ -1,0 +1,136 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "SBT Repository Analysis Output Schema",
+  "description": "Schema for ANALYZE operation output that extracts dependency information from SBT repositories. This JSON will be used to populate the SQLite database.",
+  "type": "object",
+  "required": [
+    "repository",
+    "sbtVersion",
+    "status",
+    "isPluginContainingRepo",
+    "pluginDependencies",
+    "publishedArtifacts"
+  ],
+  "properties": {
+    "repository": {
+      "type": "object",
+      "description": "Repository metadata - maps to repositories table",
+      "required": ["url", "organization", "name"],
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "Repository URL (e.g., https://github.com/org/repo) - maps to repositories.url"
+        },
+        "organization": {
+          "type": "string",
+          "description": "Organization/group ID (e.g., com.example) - maps to repositories.organization"
+        },
+        "name": {
+          "type": "string",
+          "description": "Repository name - maps to repositories.name"
+        }
+      }
+    },
+    "sbtVersion": {
+      "type": "string",
+      "description": "SBT version from build.properties (e.g., '1.11.4' or '2.0.0-RC6'). Also check pluginCrossBuild / sbtVersion settings for SBT2 support. Maps to repositories.sbt_version"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["not_ported", "blocked", "experimental", "upstream"],
+      "description": "Migration status. Determine by: 1) If sbtVersion >= 2.0.0 OR pluginCrossBuild shows SBT2 support -> 'upstream', 2) If blocked by dependencies -> 'blocked', 3) If experimental/testing -> 'experimental', 4) Otherwise -> 'not_ported'. Maps to repositories.status"
+    },
+    "isPluginContainingRepo": {
+      "type": "boolean",
+      "description": "Whether this repository publishes SBT plugins (any published artifact has isPlugin=true). Maps to repositories.is_plugin_containing_repo"
+    },
+    "pluginDependencies": {
+      "type": "array",
+      "description": "List of SBT plugins this repository depends on (from plugins.sbt and project/*.sbt). Maps to repository_plugin_dependencies table",
+      "items": {
+        "type": "object",
+        "required": ["organization", "name", "version"],
+        "properties": {
+          "organization": {
+            "type": "string",
+            "description": "Plugin organization/group ID (e.g., 'org.scalameta')"
+          },
+          "name": {
+            "type": "string",
+            "description": "Plugin artifact name (e.g., 'sbt-scalafmt')"
+          },
+          "version": {
+            "type": "string",
+            "description": "Plugin version that repository depends on. Maps to repository_plugin_dependencies.version"
+          }
+        }
+      }
+    },
+    "publishedArtifacts": {
+      "type": "array",
+      "description": "All artifacts (JARs/plugins) published by subprojects in this repository. Maps to artifacts table. Each artifact's libraryDependencies map to artifact_dependencies table",
+      "items": {
+        "type": "object",
+        "required": ["organization", "name", "version", "isPlugin"],
+        "properties": {
+          "organization": {
+            "type": "string",
+            "description": "Artifact organization/group ID - maps to artifacts.organization"
+          },
+          "name": {
+            "type": "string",
+            "description": "Artifact name - maps to artifacts.name"
+          },
+          "version": {
+            "type": "string",
+            "description": "Artifact version - maps to artifacts.version"
+          },
+          "isPlugin": {
+            "type": "boolean",
+            "description": "Whether this artifact is an SBT plugin (has plugin descriptor, extends Plugin trait, enables SbtPlugin, etc.) - maps to artifacts.is_plugin"
+          },
+          "subproject": {
+            "type": ["string", "null"],
+            "description": "Name of the subproject that publishes this artifact (from lazy val name) - maps to artifacts.subproject"
+          },
+          "isPublished": {
+            "type": "boolean",
+            "description": "Whether this artifact is actually published (publish / skip != true) - maps to artifacts.is_published"
+          },
+          "scalaVersion": {
+            "type": ["string", "null"],
+            "description": "Scala version this artifact is built for (from scalaVersion setting) - maps to artifacts.scala_version"
+          },
+          "libraryDependencies": {
+            "type": "array",
+            "description": "Library dependencies for this specific artifact (from libraryDependencies in build.sbt). Maps to artifact_dependencies table where dependent_artifact_id is this artifact",
+            "items": {
+              "type": "object",
+              "required": ["organization", "name", "version", "scope"],
+              "properties": {
+                "organization": {
+                  "type": "string",
+                  "description": "Dependency organization/group ID"
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Dependency artifact name"
+                },
+                "version": {
+                  "type": "string",
+                  "description": "Dependency version. Maps to artifact_dependencies.version"
+                },
+                "scope": {
+                  "type": "string",
+                  "enum": ["Compile", "Test", "Provided", "Runtime"],
+                  "description": "Dependency scope (from % Test, % Provided, etc., default is Compile). Maps to artifact_dependencies.scope"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

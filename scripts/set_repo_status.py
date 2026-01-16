@@ -147,13 +147,13 @@ def set_status(identifier, status):
             # Artifact identifier: organization:name:version
             set_artifact_status(identifier, status)
             return
-    
+
     # Check for repository format (org/name)
     if "/" in identifier:
         # Repository identifier: organization/name
         set_repository_status(identifier, status)
         return
-    
+
     # Neither format matched
     print(f"Error: Identifier must be either:")
     print(f"  - Repository format: 'organization/name'")

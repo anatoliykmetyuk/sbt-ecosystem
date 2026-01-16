@@ -91,6 +91,14 @@ def format_note(note):
     return note[:80] + "..."
 
 
+def colorize_note(note):
+    """Colorize note in yellow"""
+    if not note:
+        return None
+    formatted = format_note(note)
+    return f"{YELLOW}{formatted}{RESET}"
+
+
 def colorize_status_letter(status_letter):
     """Colorize status letter: X=red, ✓=green, emoji=no color, others=no color"""
     if status_letter == "X":
@@ -115,9 +123,9 @@ def print_dependency_tree(cursor, repository_id, org, name, status, note, visite
     status_letter = get_status_letter(status)
     colored_status = colorize_status_letter(status_letter)
     repo_name = format_repo_name(org, name)
-    formatted_note = format_note(note)
-    if formatted_note:
-        print(f"{indent}{colored_status} {repo_name} ({formatted_note})")
+    colored_note = colorize_note(note)
+    if colored_note:
+        print(f"{indent}{colored_status} {repo_name} ({colored_note})")
     else:
         print(f"{indent}{colored_status} {repo_name}")
 
@@ -151,10 +159,10 @@ def print_dependency_tree(cursor, repository_id, org, name, status, note, visite
                 status_letter = get_status_letter(plugin_repo_status)
                 colored_status = colorize_status_letter(status_letter)
                 repo_name = format_repo_name(plugin_repo_org, plugin_repo_name)
-                formatted_note = format_note(plugin_repo_note)
+                colored_note = colorize_note(plugin_repo_note)
                 already_visited_text = colorize_already_visited("(already visited)")
-                if formatted_note:
-                    print(f"{child_indent}{colored_status} {repo_name} ({formatted_note}) {already_visited_text}")
+                if colored_note:
+                    print(f"{child_indent}{colored_status} {repo_name} ({colored_note}) {already_visited_text}")
                 else:
                     print(f"{child_indent}{colored_status} {repo_name} {already_visited_text}")
                 continue
@@ -169,9 +177,9 @@ def print_dependency_tree(cursor, repository_id, org, name, status, note, visite
                 status_letter = get_status_letter(plugin_repo_status)
                 colored_status = colorize_status_letter(status_letter)
                 repo_name = format_repo_name(plugin_repo_org, plugin_repo_name)
-                formatted_note = format_note(plugin_repo_note)
-                if formatted_note:
-                    print(f"{child_indent}{colored_status} {repo_name} ({formatted_note})")
+                colored_note = colorize_note(plugin_repo_note)
+                if colored_note:
+                    print(f"{child_indent}{colored_status} {repo_name} ({colored_note})")
                 else:
                     print(f"{child_indent}{colored_status} {repo_name}")
             else:
@@ -234,8 +242,8 @@ def generate_report(repo_identifier):
         print(f"Dependency Report for: {format_repo_name(repo_org, repo_name)}")
         print(f"Status: {repo_status or 'unknown'}")
         if repo_note:
-            formatted_note = format_note(repo_note)
-            print(f"Note: {formatted_note}")
+            colored_note = colorize_note(repo_note)
+            print(f"Note: {colored_note}")
         print("=" * 60)
         print()
         print("Legend:")

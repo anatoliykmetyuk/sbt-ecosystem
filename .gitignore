@@ -43,11 +43,6 @@ target/
 *.class
 *.log
 
-# Database files
-*.db
-*.sqlite
-*.sqlite3
-
 # OS files
 .DS_Store
 .DS_Store?

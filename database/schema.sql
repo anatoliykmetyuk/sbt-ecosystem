@@ -25,6 +25,7 @@ CREATE TABLE artifacts (
     repository_id INTEGER,  -- NULL if artifact is known only from dependencies
     subproject TEXT,  -- Name of subproject that publishes this (if from repository)
     is_published BOOLEAN DEFAULT 1,
+    status TEXT CHECK(status IN ('not_ported', 'blocked', 'experimental', 'upstream')),  -- Same as repository status, NULL if artifact has no repository
     scala_version TEXT,  -- May be NULL for non-Scala artifacts
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -66,6 +67,7 @@ CREATE INDEX idx_repositories_status ON repositories(status);
 CREATE INDEX idx_artifacts_org_name_version ON artifacts(organization, name, version);
 CREATE INDEX idx_artifacts_repository_id ON artifacts(repository_id);
 CREATE INDEX idx_artifacts_is_plugin ON artifacts(is_plugin);
+CREATE INDEX idx_artifacts_status ON artifacts(status);
 
 CREATE INDEX idx_repo_plugin_deps_repo ON repository_plugin_dependencies(repository_id);
 CREATE INDEX idx_repo_plugin_deps_plugin ON repository_plugin_dependencies(plugin_artifact_id);

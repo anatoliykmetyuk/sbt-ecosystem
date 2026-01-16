@@ -7,14 +7,14 @@ Analyze a cloned SBT repository and extract all dependency information, producin
 ## Input
 
 You will be provided with:
-- A path to a cloned repository directory or a URL to a GitHub repository or a URL to scaladex
+- A path to a cloned repository directory or a URL to a GitHub repository or a URL to scaladex or an artifact identifyer
 - The JSON schema file (`database/analyze-schema.json`) that defines the exact output format
 
 ## Analysis Process
 
 ### Step 1: Repository Metadata
 
-1. If the repository is providead as a URL, clone it to repos/ directory
+1. Ensure the repository is cloned to `repos/` directory. If the repository is providead as a URL, clone it to `repos/` directory. If the repository is provided as an artifact identifyer, fetch the repository name using `scripts/fetch_plugin_repos.py`.
 
 2. **Repository URL**: Extract from:
    - `build.sbt`: Look for `homepage := Some(url(...))` or `scmInfo`
@@ -36,17 +36,25 @@ You will be provided with:
    - This is the base SBT version
 
 2. **SBT2 Support Check**: Check for SBT2 support:
-   - **For plugins**: A plugin is considered ported to SBT 2 if its build file has `crossSbtVersions` that includes SBT 2.x versions (e.g., `crossSbtVersions := Seq("1.9.0", "2.0.0-RC8")`)
+   - **For plugins**: A plugin is considered ported to SBT 2 if ANY of the following is true:
+     - `crossSbtVersions` includes SBT 2.x versions (e.g., `crossSbtVersions := Seq("1.9.0", "2.0.0-RC8")`)
+     - `pluginCrossBuild / sbtVersion` maps ANY Scala version to an SBT 2.x version (e.g., `"2.0.0-M2"`, `"2.0.0-RC8"`, `"2.0.0"`, etc.). This is STRONG evidence of SBT 2 support, especially when combined with cross-building for Scala 3.
+     - The base `sbtVersion >= 2.0.0` in `project/build.properties`
    - **For libraries**: Check if the base `sbtVersion >= 2.0.0` OR if `pluginCrossBuild / sbtVersion` settings map to SBT 2.x for any Scala version
-   - **Important**: The presence of `pluginCrossBuild / sbtVersion` alone is NOT sufficient - you must verify that `crossSbtVersions` actually includes SBT 2.x versions. If `crossSbtVersions` is set to only SBT 1.x versions (e.g., `crossSbtVersions := "1.2.8" :: Nil`), the plugin is NOT ported, even if `pluginCrossBuild` settings exist.
+   - **Key Point**: When `pluginCrossBuild / sbtVersion` maps a Scala version to an SBT 2.x version (like `"2.0.0-M2"` or `"2.0.0-RC8"`), this IS evidence of SBT 2 support. The plugin will cross-build for SBT 2 when using that Scala version.
    - Example of ported plugin: `crossSbtVersions := Seq("1.9.0", "2.0.0-RC8")` means the plugin cross-builds for both SBT 1.9 and SBT 2.0
-   - Example of NOT ported: `crossSbtVersions := "1.2.8" :: Nil` means the plugin only builds for SBT 1.2.8, regardless of `pluginCrossBuild` settings
+   - Example of ported plugin: `(pluginCrossBuild / sbtVersion) := { case "3" => "2.0.0-M2"; case "2.12" => "1.5.8" }` means the plugin cross-builds for SBT 2.0 when using Scala 3
+   - Example of NOT ported: `crossSbtVersions := "1.2.8" :: Nil` AND `pluginCrossBuild / sbtVersion` only maps to SBT 1.x versions
 
 3. **Status Determination**:
-   - `upstream`: If `sbtVersion >= 2.0.0` OR (for plugins) `crossSbtVersions` includes SBT 2.x versions OR (for libraries) `pluginCrossBuild` shows SBT2 support with actual cross-building
+   - `upstream`: If ANY of the following is true:
+     - `sbtVersion >= 2.0.0` in `project/build.properties`
+     - (For plugins) `crossSbtVersions` includes SBT 2.x versions
+     - (For plugins) `pluginCrossBuild / sbtVersion` maps ANY Scala version to an SBT 2.x version (e.g., `"2.0.0-M2"`, `"2.0.0-RC8"`, `"2.0.0"`)
+     - (For libraries) `pluginCrossBuild` shows SBT2 support with actual cross-building
    - `blocked`: If migration is blocked by dependencies (check for blocking issues/comments)
    - `experimental`: If in experimental/testing phase
-   - `not_ported`: Otherwise (default)
+   - `not_ported`: Otherwise (default) - only use this if there is NO evidence of SBT 2.x support
 
 ### Step 3: Plugin Dependencies
 
@@ -228,7 +236,7 @@ Before outputting, verify:
 
 ## Common Pitfalls
 
-1. **Missing SBT2 Support**: Don't just check `build.properties` - for plugins, verify that `crossSbtVersions` actually includes SBT 2.x versions. The presence of `pluginCrossBuild / sbtVersion` settings alone is NOT sufficient if `crossSbtVersions` only includes SBT 1.x versions.
+1. **Missing SBT2 Support**: Don't just check `build.properties` - for plugins, check BOTH `crossSbtVersions` AND `pluginCrossBuild / sbtVersion`. If `pluginCrossBuild / sbtVersion` maps ANY Scala version to an SBT 2.x version (like `"2.0.0-M2"`), that IS evidence of SBT 2 support and the status should be `upstream`. The plugin will cross-build for SBT 2 when using that Scala version.
 2. **Plugin vs Library**: Only artifacts with `.enablePlugins(SbtPlugin)` are plugins
 3. **Dependency Scopes**: Default is `Compile`, not missing
 4. **Version Extraction**: Handle dynamic versions, SNAPSHOT versions, and version variables

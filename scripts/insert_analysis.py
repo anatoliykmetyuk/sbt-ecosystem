@@ -32,17 +32,17 @@ def initialize_database(conn):
     else:
         print("✓ Database already initialized")
 
-def get_or_create_artifact(cursor, org, name, version, is_plugin, repository_id=None, subproject=None, is_published=True, scala_version=None):
+def get_or_create_artifact(cursor, org, name, version, is_plugin, repository_id=None, subproject=None, is_published=True, scala_version=None, status=None):
     """Get existing artifact ID or create new artifact. Only fills in NULL values for existing artifacts."""
     cursor.execute("""
-        SELECT id, repository_id, subproject, is_published, scala_version FROM artifacts
+        SELECT id, repository_id, subproject, is_published, scala_version, status FROM artifacts
         WHERE organization = ? AND name = ? AND version = ?
     """, (org, name, version))
     result = cursor.fetchone()
 
     if result:
         artifact_id = result[0]
-        existing_repo_id, existing_subproject, existing_is_published, existing_scala_version = result[1:]
+        existing_repo_id, existing_subproject, existing_is_published, existing_scala_version, existing_status = result[1:]
 
         # Only update NULL fields, don't overwrite existing data
         updates = []
@@ -51,6 +51,10 @@ def get_or_create_artifact(cursor, org, name, version, is_plugin, repository_id=
         if repository_id is not None and existing_repo_id is None:
             updates.append("repository_id = ?")
             params.append(repository_id)
+            # If we're setting repository_id and status is provided, also update status
+            if status is not None and existing_status is None:
+                updates.append("status = ?")
+                params.append(status)
 
         if subproject is not None and existing_subproject is None:
             updates.append("subproject = ?")
@@ -64,6 +68,14 @@ def get_or_create_artifact(cursor, org, name, version, is_plugin, repository_id=
             updates.append("scala_version = ?")
             params.append(scala_version)
 
+        # If repository_id exists but status is NULL, try to get status from repository
+        if existing_repo_id is not None and existing_status is None:
+            cursor.execute("SELECT status FROM repositories WHERE id = ?", (existing_repo_id,))
+            repo_status_result = cursor.fetchone()
+            if repo_status_result:
+                updates.append("status = ?")
+                params.append(repo_status_result[0])
+
         if updates:
             params.append(artifact_id)
             cursor.execute(f"""
@@ -74,10 +86,17 @@ def get_or_create_artifact(cursor, org, name, version, is_plugin, repository_id=
 
         return artifact_id
     else:
+        # If status is not provided but repository_id is, get status from repository
+        if status is None and repository_id is not None:
+            cursor.execute("SELECT status FROM repositories WHERE id = ?", (repository_id,))
+            repo_status_result = cursor.fetchone()
+            if repo_status_result:
+                status = repo_status_result[0]
+
         cursor.execute("""
-            INSERT INTO artifacts (organization, name, version, is_plugin, repository_id, subproject, is_published, scala_version)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (org, name, version, is_plugin, repository_id, subproject, is_published, scala_version))
+            INSERT INTO artifacts (organization, name, version, is_plugin, repository_id, subproject, is_published, scala_version, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (org, name, version, is_plugin, repository_id, subproject, is_published, scala_version, status))
         return cursor.lastrowid
 
 def insert_analysis(json_path):
@@ -155,7 +174,8 @@ def insert_analysis(json_path):
                 plugin_dep['version'],
                 is_plugin=True,
                 repository_id=None,
-                is_published=True
+                is_published=True,
+                status=None  # Artifacts without repositories have NULL status
             )
 
             cursor.execute("""
@@ -166,6 +186,9 @@ def insert_analysis(json_path):
         print(f"✓ Plugin dependencies: {len(data['pluginDependencies'])}")
 
         # 3. Insert published artifacts and their dependencies
+        # Get repository status for artifacts
+        repo_status = data.get('status', 'not_ported')
+
         for artifact in data['publishedArtifacts']:
             artifact_id = get_or_create_artifact(
                 cursor,
@@ -176,7 +199,8 @@ def insert_analysis(json_path):
                 repository_id=repo_id,
                 subproject=artifact.get('subproject'),
                 is_published=artifact.get('isPublished', True),
-                scala_version=artifact.get('scalaVersion')
+                scala_version=artifact.get('scalaVersion'),
+                status=repo_status  # Artifact status matches repository status
             )
 
             # Insert library dependencies for this artifact
@@ -189,7 +213,8 @@ def insert_analysis(json_path):
                     lib_dep['version'],
                     is_plugin=False,
                     repository_id=None,
-                    is_published=True
+                    is_published=True,
+                    status=None  # Artifacts without repositories have NULL status
                 )
 
                 # Insert artifact dependency

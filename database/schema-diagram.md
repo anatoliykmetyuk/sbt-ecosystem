@@ -31,6 +31,7 @@ erDiagram
         int repository_id FK "NULL if known only from deps"
         string subproject "Subproject name (if from repo)"
         boolean is_published "Actually published?"
+        string status "not_ported|blocked|experimental|upstream (nullable, matches repo status)"
         string scala_version "Scala version (nullable)"
         datetime created_at
         datetime updated_at
@@ -65,6 +66,10 @@ Stores all artifacts (JARs/plugins) that are either:
 - Referenced as dependencies (repository_id is NULL)
 
 This allows tracking artifacts we know about from dependencies even before analyzing their source repository.
+
+The `status` field reflects whether the artifact is published for SBT2:
+- For artifacts with a repository: status matches the repository's status
+- For artifacts without a repository: status is NULL (unknown)
 
 ### repository_plugin_dependencies
 Junction table linking repositories to the SBT plugins they depend on. Repositories depend on plugins directly (from `plugins.sbt` files). Plugins are special artifacts that require source code changes during migration.
@@ -159,6 +164,7 @@ classDiagram
 | `publishedArtifacts[].isPlugin` | `artifacts` | `is_plugin` |
 | `publishedArtifacts[].subproject` | `artifacts` | `subproject` |
 | `publishedArtifacts[].isPublished` | `artifacts` | `is_published` |
+| `status` (from repository) | `artifacts` | `status` |
 | `publishedArtifacts[].scalaVersion` | `artifacts` | `scala_version` |
 | `publishedArtifacts[].libraryDependencies[].organization` | `artifacts` | `organization` |
 | `publishedArtifacts[].libraryDependencies[].name` | `artifacts` | `name` |
@@ -173,7 +179,7 @@ classDiagram
    - `artifacts` table (for the plugin artifact itself)
    - `repository_plugin_dependencies` table (linking repository to plugin)
 
-3. **Published artifacts**: Each item in `publishedArtifacts` creates an entry in the `artifacts` table with `repository_id` set to the analyzed repository.
+3. **Published artifacts**: Each item in `publishedArtifacts` creates an entry in the `artifacts` table with `repository_id` set to the analyzed repository. The artifact's `status` field is set to match the repository's status.
 
 4. **Library dependencies**: Each `libraryDependencies` item within a `publishedArtifact` creates:
    - An entry in `artifacts` table (for the dependency artifact, if not already present)

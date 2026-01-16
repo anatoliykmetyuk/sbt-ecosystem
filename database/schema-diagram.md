@@ -17,6 +17,7 @@ erDiagram
         string name UK "Repository name [UK: (org,name)]"
         boolean is_plugin_containing_repo "Publishes plugins?"
         string status "not_ported|blocked|experimental|upstream"
+        string note "Optional note (e.g., blocking reasons, special requirements)"
         datetime created_at
         datetime updated_at
     }
@@ -62,7 +63,7 @@ erDiagram
 ## Table Descriptions
 
 ### repositories
-Stores information about SBT repositories (source code repositories). Each repository can have a status indicating its migration state. The `status` field indicates whether the repository has been ported to SBT 2.x (`upstream`), is blocked, experimental, or not yet ported.
+Stores information about SBT repositories (source code repositories). Each repository can have a status indicating its migration state. The `status` field indicates whether the repository has been ported to SBT 2.x (`upstream`), is blocked, experimental, or not yet ported. The `note` field is an optional text field for storing additional information about the repository, such as blocking reasons or special requirements.
 
 ### artifacts
 Stores all artifacts (JARs/plugins) that are either:

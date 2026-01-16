@@ -19,14 +19,14 @@ RESET = "\033[0m"
 
 
 def get_status_letter(status):
-    """Convert status to single letter indicator"""
+    """Convert status to single letter indicator or emoji"""
     if status is None:
         return "?"  # Artifact without known repository
     status_map = {
         "not_ported": "X",  # Not yet ported
         "experimental": "E",
         "upstream": "✓",  # Upstream-ported (tick mark)
-        "blocked": "B"
+        "blocked": "🛑"  # Blocked (stop sign emoji)
     }
     return status_map.get(status, "?")
 
@@ -34,7 +34,7 @@ def get_status_letter(status):
 def find_repository(cursor, org, name):
     """Find repository by organization and name"""
     cursor.execute("""
-        SELECT id, organization, name, status
+        SELECT id, organization, name, status, note
         FROM repositories
         WHERE organization = ? AND name = ?
     """, (org, name))
@@ -62,7 +62,7 @@ def get_plugin_dependencies(cursor, repository_id):
 def get_repository_for_plugin(cursor, plugin_artifact_id):
     """Get repository information for a plugin artifact"""
     cursor.execute("""
-        SELECT r.id, r.organization, r.name, r.status
+        SELECT r.id, r.organization, r.name, r.status, r.note
         FROM artifacts a
         JOIN repositories r ON a.repository_id = r.id
         WHERE a.id = ? AND a.repository_id IS NOT NULL
@@ -82,12 +82,24 @@ def format_artifact_name(org, name, version=None):
     return f"{org}:{name}"
 
 
+def format_note(note):
+    """Format note by truncating to 80 characters and adding ... if longer"""
+    if not note:
+        return None
+    if len(note) <= 80:
+        return note
+    return note[:80] + "..."
+
+
 def colorize_status_letter(status_letter):
-    """Colorize status letter: X=red, ✓=green, others=no color"""
+    """Colorize status letter: X=red, ✓=green, emoji=no color, others=no color"""
     if status_letter == "X":
         return f"{RED}{status_letter}{RESET}"
     elif status_letter == "✓":
         return f"{GREEN}{status_letter}{RESET}"
+    elif status_letter == "🛑":
+        # Emoji doesn't need color
+        return status_letter
     else:
         return status_letter
 
@@ -97,13 +109,17 @@ def colorize_already_visited(text):
     return f"{YELLOW}{text}{RESET}"
 
 
-def print_dependency_tree(cursor, repository_id, org, name, status, visited_repos, visited_artifacts, indent=""):
+def print_dependency_tree(cursor, repository_id, org, name, status, note, visited_repos, visited_artifacts, indent=""):
     """Recursively print dependency tree"""
     # Format the current repository/artifact
     status_letter = get_status_letter(status)
     colored_status = colorize_status_letter(status_letter)
     repo_name = format_repo_name(org, name)
-    print(f"{indent}{colored_status} {repo_name}")
+    formatted_note = format_note(note)
+    if formatted_note:
+        print(f"{indent}{colored_status} {repo_name} ({formatted_note})")
+    else:
+        print(f"{indent}{colored_status} {repo_name}")
 
     # Mark as visited
     visited_repos.add(repository_id)
@@ -128,15 +144,19 @@ def print_dependency_tree(cursor, repository_id, org, name, status, visited_repo
 
         if repo_info:
             # Plugin comes from a repository - always show as repository
-            plugin_repo_id, plugin_repo_org, plugin_repo_name, plugin_repo_status = repo_info
+            plugin_repo_id, plugin_repo_org, plugin_repo_name, plugin_repo_status, plugin_repo_note = repo_info
 
             if plugin_repo_id in visited_repos:
                 # Already visited this repository
                 status_letter = get_status_letter(plugin_repo_status)
                 colored_status = colorize_status_letter(status_letter)
                 repo_name = format_repo_name(plugin_repo_org, plugin_repo_name)
+                formatted_note = format_note(plugin_repo_note)
                 already_visited_text = colorize_already_visited("(already visited)")
-                print(f"{child_indent}{colored_status} {repo_name} {already_visited_text}")
+                if formatted_note:
+                    print(f"{child_indent}{colored_status} {repo_name} ({formatted_note}) {already_visited_text}")
+                else:
+                    print(f"{child_indent}{colored_status} {repo_name} {already_visited_text}")
                 continue
 
             # Mark artifact as visited to avoid processing it again elsewhere
@@ -149,7 +169,11 @@ def print_dependency_tree(cursor, repository_id, org, name, status, visited_repo
                 status_letter = get_status_letter(plugin_repo_status)
                 colored_status = colorize_status_letter(status_letter)
                 repo_name = format_repo_name(plugin_repo_org, plugin_repo_name)
-                print(f"{child_indent}{colored_status} {repo_name}")
+                formatted_note = format_note(plugin_repo_note)
+                if formatted_note:
+                    print(f"{child_indent}{colored_status} {repo_name} ({formatted_note})")
+                else:
+                    print(f"{child_indent}{colored_status} {repo_name}")
             else:
                 # Plugin is not ported - recurse to show its dependencies
                 print_dependency_tree(
@@ -158,6 +182,7 @@ def print_dependency_tree(cursor, repository_id, org, name, status, visited_repo
                     plugin_repo_org,
                     plugin_repo_name,
                     plugin_repo_status,
+                    plugin_repo_note,
                     visited_repos,
                     visited_artifacts,
                     next_indent
@@ -203,18 +228,21 @@ def generate_report(repo_identifier):
             print(f"Error: Repository '{org}/{name}' not found in database")
             sys.exit(1)
 
-        repo_id, repo_org, repo_name, repo_status = repo_info
+        repo_id, repo_org, repo_name, repo_status, repo_note = repo_info
 
         # Print header
         print(f"Dependency Report for: {format_repo_name(repo_org, repo_name)}")
         print(f"Status: {repo_status or 'unknown'}")
+        if repo_note:
+            formatted_note = format_note(repo_note)
+            print(f"Note: {formatted_note}")
         print("=" * 60)
         print()
         print("Legend:")
         print("  ✓ = upstream (ported)")
         print("  X = not_ported")
         print("  E = experimental")
-        print("  B = blocked")
+        print("  🛑 = blocked")
         print("  ? = artifact without known repository")
         print()
         print("Dependency Tree:")
@@ -229,6 +257,7 @@ def generate_report(repo_identifier):
             repo_org,
             repo_name,
             repo_status,
+            repo_note,
             visited_repos,
             visited_artifacts,
             ""

@@ -9,6 +9,7 @@ CREATE TABLE repositories (
     name TEXT NOT NULL,
     is_plugin_containing_repo BOOLEAN NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'not_ported' CHECK(status IN ('not_ported', 'blocked', 'experimental', 'upstream')),
+    note TEXT,  -- Optional note about the repository (e.g., blocking reasons, special requirements)
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(organization, name)

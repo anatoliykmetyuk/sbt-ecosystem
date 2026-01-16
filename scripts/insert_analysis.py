@@ -33,15 +33,22 @@ def initialize_database(conn):
         print("✓ Database already initialized")
 
 def get_or_create_artifact(cursor, org, name, is_plugin, repository_id=None, subproject=None, is_published=True, scala_version=None, status=None):
-    """Get existing artifact ID or create new artifact. Always overwrites existing data with new analysis."""
+    """Get existing artifact ID or create new artifact. Only updates fields that are provided (not None), preserving existing values."""
     cursor.execute("""
-        SELECT id FROM artifacts
+        SELECT id, repository_id, status FROM artifacts
         WHERE organization = ? AND name = ?
     """, (org, name))
     result = cursor.fetchone()
 
     if result:
         artifact_id = result[0]
+        existing_repository_id = result[1]
+        existing_status = result[2]
+
+        # CRITICAL: Preserve existing repository_id if new one is None
+        # NEVER overwrite a valid repository_id with NULL - this breaks artifact-repository links!
+        if repository_id is None and existing_repository_id is not None:
+            repository_id = existing_repository_id
 
         # If status is not provided but repository_id is, get status from repository
         if status is None and repository_id is not None:
@@ -49,8 +56,14 @@ def get_or_create_artifact(cursor, org, name, is_plugin, repository_id=None, sub
             repo_status_result = cursor.fetchone()
             if repo_status_result:
                 status = repo_status_result[0]
+            elif existing_status is not None:
+                # Preserve existing status if repository doesn't have one
+                status = existing_status
+        elif status is None and existing_status is not None:
+            # Preserve existing status if no new status provided
+            status = existing_status
 
-        # Always overwrite all fields with new analysis data
+        # Update fields - repository_id is preserved above if it was None
         cursor.execute("""
             UPDATE artifacts
             SET is_plugin = ?, repository_id = ?, subproject = ?, is_published = ?, scala_version = ?, status = ?
